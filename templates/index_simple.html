@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hindi/Hinglish Voice Cloning</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 700px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea, select, input[type="file"] {
+            width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+        }
+        textarea { min-height: 80px; resize: vertical; }
+        button {
+            background-color: #28a745; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%;
+        }
+        button:hover { background-color: #218838; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .flash-messages li { padding: 10px; border-radius: 4px; }
+        .flash-messages .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-messages .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .loader { display: none; /* Hidden by default */ text-align: center; margin-top: 20px; }
+        .loader::after {
+            content: ''; display: inline-block; width: 30px; height: 30px; border: 4px solid #ccc; border-top-color: #333; border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        small { color: #666; display: block; margin-top: -10px; margin-bottom: 10px; }
+        .model-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 15px; border-radius: 4px; text-align: center; margin-bottom: 20px; font-weight: bold;}
+        #audio-preview-container {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f4fc;
+            border-radius: 8px;
+            text-align: center;
+        }
+        #audio-player {
+            width: 100%;
+            margin: 10px 0;
+        }
+        #download-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: inline-block;
+            text-decoration: none;
+            margin-top: 10px;
+        }
+        #download-btn:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hindi/Hinglish Voice Cloning</h1>
+        <h2>Using XTTS v2</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% if model_error %}
+            <div class="model-error">
+                <p>System Error: Could not load the voice cloning model.</p>
+                <p>{{ model_error }}</p>
+                <p>Voice generation is unavailable. Please check server logs or contact support.</p>
+            </div>
+        {% else %}
+            <form id="clone-form" method="post" enctype="multipart/form-data">
+                <div>
+                    <label for="voice_sample">Reference Voice Sample:</label>
+                    <input type="file" id="voice_sample" name="voice_sample" accept=".wav,.mp3,.flac,.ogg,.m4a" required>
+                    <small>Upload a clear audio file (WAV, MP3, FLAC, OGG, M4A). 3-15 seconds recommended. Max 16MB.</small>
+                </div>
+
+                <div>
+                    <label for="text">Text to Synthesize:</label>
+                    <textarea id="text" name="text" rows="4" required placeholder="Enter text here... For Hindi use Devanagari script (नमस्ते). For Hinglish use Roman script (Namaste)."></textarea>
+                    <small>Enter your text in Hindi (Devanagari) or Hinglish (Roman script).</small>
+                </div>
+
+                <div>
+                    <label for="language">Language of Input Text:</label>
+                    <select id="language" name="language">
+                        {% for code, name in languages.items() %}
+                         <option value="{{ code }}" {{ 'selected' if code == 'hi' else '' }}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Select 'Hindi' for Devanagari text, 'Hinglish' for Roman script Hindi/mixed text. For other languages, select accordingly.</small>
+                </div>
+
+                <button type="submit" id="submit-button">Generate Cloned Voice</button>
+            </form>
+
+            <div id="loader" class="loader">Generating... Please wait.</div>
+            
+            <div id="audio-preview-container">
+                <h3>Generated Voice Preview</h3>
+                <audio id="audio-player" controls>
+                    Your browser does not support the audio element.
+                </audio>
+                <br>
+                <a id="download-btn" href="#" download>Download Audio</a>
+            </div>
+        {% endif %} {# End model_error else #}
+
+    </div>
+
+    <script>
+        const form = document.getElementById('clone-form');
+        const submitButton = document.getElementById('submit-button');
+        const loader = document.getElementById('loader');
+        const audioPreviewContainer = document.getElementById('audio-preview-container');
+        const audioPlayer = document.getElementById('audio-player');
+        const downloadBtn = document.getElementById('download-btn');
+
+        if (form) {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                // Disable button and show loader
+                submitButton.disabled = true;
+                submitButton.textContent = 'Generating...';
+                loader.style.display = 'block';
+                audioPreviewContainer.style.display = 'none';
+
+                try {
+                    const formData = new FormData(form);
+                    const response = await fetch('/clone_voice', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Server returned error: ' + response.status);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Set up audio preview
+                        audioPlayer.src = data.audio_url;
+                        downloadBtn.href = data.audio_url;
+                        downloadBtn.download = data.download_name;
+                        audioPreviewContainer.style.display = 'block';
+                        audioPlayer.play(); // Auto-play the preview
+                    } else {
+                        throw new Error(data.message || 'Generation failed');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred: ' + error.message);
+                } finally {
+                    // Re-enable button and hide loader
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Generate Cloned Voice';
+                    loader.style.display = 'none';
+                }
+            });
+        }
+    </script>
+
+</body>
+</html>
